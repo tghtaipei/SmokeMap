@@ -131,15 +131,97 @@ function centerMap(lat, lng, zoom = 15) {
 }
 
 /* ===========================
-   Location data (loaded from data/locations.json at startup)
+   Location data
+   Loaded from data/locations.json (pre-built by CI), or fetched live
+   from Google My Maps KML when the JSON is empty.
    =========================== */
 let mapLocations = [];
 
+const MAP_ID      = '1A9MhjU-EbBghtXae0MewBZMFnrQzwxE';
+const KML_URL     = `https://www.google.com/maps/d/u/0/kml?mid=${MAP_ID}&forcekml=1`;
+const CACHE_KEY   = 'smokemap-locations-v1';
+const CACHE_TTL   = 6 * 60 * 60 * 1000; // 6 hours
+
+function parseKML(kmlText) {
+  const doc = new DOMParser().parseFromString(kmlText, 'application/xml');
+  const results = [];
+  doc.querySelectorAll('Placemark').forEach(pm => {
+    const name = pm.querySelector('name')?.textContent?.trim() || '';
+    if (!name) return;
+
+    let address = '';
+    pm.querySelectorAll('SimpleData, Data').forEach(el => {
+      const fn = (el.getAttribute('name') || '').toLowerCase();
+      if (['地址', 'address', 'addr'].includes(fn)) {
+        address = (el.textContent || el.querySelector('value')?.textContent || '').trim();
+      }
+    });
+
+    const coordsText = pm.querySelector('coordinates')?.textContent?.trim();
+    if (!coordsText) return;
+    const [lngS, latS] = coordsText.split(',');
+    const lat = parseFloat(latS), lng = parseFloat(lngS);
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    results.push({ name, address, lat, lng });
+  });
+  return results;
+}
+
+async function fetchKMLLive() {
+  // Try direct fetch (may succeed if CORS headers are present)
+  const attempts = [
+    () => fetch(KML_URL).then(r => r.ok ? r.text() : Promise.reject()),
+    () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(KML_URL)}`)
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(d => d.contents),
+    () => fetch(`https://corsproxy.io/?${encodeURIComponent(KML_URL)}`).then(r => r.ok ? r.text() : Promise.reject()),
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const kmlText = await attempt();
+      if (kmlText && kmlText.includes('<Placemark')) {
+        return parseKML(kmlText);
+      }
+    } catch (_) {}
+  }
+  return [];
+}
+
 async function loadLocations() {
+  // 1. Try pre-built JSON
   try {
     const resp = await fetch('data/locations.json');
-    if (resp.ok) mapLocations = await resp.json();
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data) && data.length > 0) {
+        mapLocations = data;
+        return;
+      }
+    }
   } catch (_) {}
+
+  // 2. Try localStorage cache
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const { ts, locs } = JSON.parse(cached);
+      if (Date.now() - ts < CACHE_TTL && locs.length > 0) {
+        mapLocations = locs;
+        return;
+      }
+    }
+  } catch (_) {}
+
+  // 3. Fetch live KML
+  const locs = await fetchKMLLive();
+  if (locs.length > 0) {
+    mapLocations = locs;
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), locs }));
+    } catch (_) {}
+  }
 }
 
 function filterLocations(query) {
