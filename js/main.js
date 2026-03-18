@@ -131,6 +131,26 @@ function centerMap(lat, lng, zoom = 15) {
 }
 
 /* ===========================
+   Location data (loaded from data/locations.json at startup)
+   =========================== */
+let mapLocations = [];
+
+async function loadLocations() {
+  try {
+    const resp = await fetch('data/locations.json');
+    if (resp.ok) mapLocations = await resp.json();
+  } catch (_) {}
+}
+
+function filterLocations(query) {
+  const q = query.toLowerCase();
+  return mapLocations.filter(loc =>
+    loc.name.toLowerCase().includes(q) ||
+    loc.address.toLowerCase().includes(q)
+  ).slice(0, 8);
+}
+
+/* ===========================
    Autocomplete dropdown
    =========================== */
 let suggestTimer = null;
@@ -140,57 +160,47 @@ function hideDropdown() {
   $dropdown.innerHTML = '';
 }
 
-function renderDropdown(results) {
+function renderDropdown(locations) {
   $dropdown.innerHTML = '';
-  if (!results.length) {
-    hideDropdown();
+
+  if (!locations.length) {
+    const empty = document.createElement('div');
+    empty.className = 'dropdown-item dropdown-empty';
+    empty.textContent = '無對應關鍵字之地點';
+    $dropdown.appendChild(empty);
+    $dropdown.classList.remove('hidden');
     return;
   }
-  results.forEach(r => {
-    const parts  = r.display_name.split(',');
-    const main   = parts[0].trim();
-    const sub    = parts.slice(1, 3).join(',').trim();
 
+  locations.forEach(loc => {
     const item = document.createElement('div');
     item.className = 'dropdown-item';
     item.setAttribute('role', 'option');
     item.innerHTML =
-      `<div class="item-main">${main}</div>` +
-      (sub ? `<div class="item-sub">${sub}</div>` : '');
+      `<div class="item-main">${loc.name}</div>` +
+      (loc.address ? `<div class="item-sub">${loc.address}</div>` : '');
 
     item.addEventListener('mousedown', e => {
-      // mousedown fires before blur; prevent input losing focus first
       e.preventDefault();
-      $searchInput.value = main;
+      $searchInput.value = loc.name;
       hideDropdown();
-      centerMap(parseFloat(r.lat), parseFloat(r.lon), 15);
-      showToast(`📍 ${main}`, 'success', 4000);
+      centerMap(loc.lat, loc.lng, 17);
+      showToast(`📍 ${loc.name}`, 'success', 4000);
     });
     $dropdown.appendChild(item);
   });
   $dropdown.classList.remove('hidden');
 }
 
-async function fetchSuggestions(query) {
-  if (query.length < 2) { hideDropdown(); return; }
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?` +
-      new URLSearchParams({
-        q: query, format: 'json', limit: '6',
-        countrycodes: 'tw', addressdetails: '0',
-      });
-    const response = await fetch(url, {
-      headers: { 'Accept-Language': currentLang === 'zh' ? 'zh-TW,zh' : 'en' },
-    });
-    if (!response.ok) return;
-    renderDropdown(await response.json());
-  } catch (_) {}
+function showSuggestions(query) {
+  if (!query) { hideDropdown(); return; }
+  renderDropdown(filterLocations(query));
 }
 
 /* ===========================
-   Search (Nominatim geocoding)
+   Search
    =========================== */
-async function searchLocation() {
+function searchLocation() {
   const query = $searchInput.value.trim();
   hideDropdown();
   if (!query) {
@@ -199,39 +209,15 @@ async function searchLocation() {
     return;
   }
 
-  // Update button state
-  $searchBtn.textContent = t('searching');
-  $searchBtn.disabled    = true;
-
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?` +
-      new URLSearchParams({
-        q: query, format: 'json', limit: '1',
-        countrycodes: 'tw', addressdetails: '0',
-      });
-
-    const response = await fetch(url, {
-      headers: { 'Accept-Language': currentLang === 'zh' ? 'zh-TW,zh' : 'en' },
-    });
-
-    if (!response.ok) throw new Error('Network response was not ok');
-
-    const results = await response.json();
-
-    if (results.length === 0) {
-      showToast(t('notFound'), 'error');
-    } else {
-      const { lat, lon, display_name } = results[0];
-      centerMap(parseFloat(lat), parseFloat(lon), 15);
-      showToast(`📍 ${display_name.split(',')[0]}`, 'success', 4000);
-    }
-  } catch (err) {
-    console.error('Search error:', err);
-    showToast(t('searchError'), 'error');
-  } finally {
-    $searchBtn.textContent = t('search');
-    $searchBtn.disabled    = false;
+  const results = filterLocations(query);
+  if (!results.length) {
+    showToast(t('notFound'), 'error');
+    return;
   }
+
+  const loc = results[0];
+  centerMap(loc.lat, loc.lng, 17);
+  showToast(`📍 ${loc.name}`, 'success', 4000);
 }
 
 /* ===========================
@@ -293,12 +279,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') hideDropdown();
   });
 
-  // Live suggestions
+  // Live suggestions (instant, local data)
   $searchInput.addEventListener('input', () => {
-    clearTimeout(suggestTimer);
-    const q = $searchInput.value.trim();
-    if (q.length < 2) { hideDropdown(); return; }
-    suggestTimer = setTimeout(() => fetchSuggestions(q), 300);
+    showSuggestions($searchInput.value.trim());
   });
 
   // Close dropdown when clicking outside
@@ -315,6 +298,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Footer year
   const yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+  // Load map locations for search
+  loadLocations();
 
   // Restore language preference
   let savedLang = 'zh';

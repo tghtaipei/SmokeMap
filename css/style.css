@@ -139,9 +139,15 @@ header {
   border-bottom: none;
 }
 
-.dropdown-item:hover,
+.dropdown-item:hover:not(.dropdown-empty),
 .dropdown-item.active {
   background: #f5f5f5;
+}
+
+.dropdown-empty {
+  color: #999;
+  font-style: italic;
+  cursor: default;
 }
 
 .dropdown-item .item-main {
