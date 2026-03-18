@@ -26,6 +26,12 @@ jobs:
 
       - name: Fetch map locations from Google My Maps KML
         run: python3 scripts/fetch_locations.py
+        continue-on-error: true
+
+      - name: Show locations count
+        run: |
+          echo "locations.json content preview:"
+          head -5 data/locations.json || echo "(file missing)"
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
