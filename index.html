@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="吸菸地圖 - 查詢台灣各地合法吸菸區位置 | SmokeMap - Find legal smoking areas in Taiwan" />
+  <title>吸菸地圖 | SmokeMap</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <header>
+    <div class="header-content">
+
+      <!-- Logo -->
+      <div class="logo">
+        <span class="logo-icon" aria-hidden="true">🚬</span>
+        <div class="logo-text">
+          <h1 class="site-title" data-i18n="title">吸菸地圖</h1>
+          <p class="site-subtitle" data-i18n="subtitle">合法吸菸區查詢</p>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="search-container">
+        <div class="search-bar">
+          <input
+            type="text"
+            id="search-input"
+            data-i18n-placeholder="searchPlaceholder"
+            placeholder="搜尋地點、地址..."
+            autocomplete="off"
+            aria-label="搜尋地點"
+          />
+          <button id="search-btn" data-i18n="search" aria-label="搜尋">搜尋</button>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="header-actions">
+        <button id="location-btn" class="icon-btn" aria-label="我的位置">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
+          </svg>
+          <span data-i18n="myLocation">我的位置</span>
+        </button>
+        <button id="lang-toggle" aria-label="切換語言">EN</button>
+      </div>
+
+    </div>
+  </header>
+
+  <main>
+    <div class="map-container">
+      <iframe
+        id="smoke-map"
+        src="https://www.google.com/maps/d/u/0/embed?mid=1A9MhjU-EbBghtXae0MewBZMFnrQzwxE&ehbc=2E312F"
+        allowfullscreen
+        loading="lazy"
+        referrerpolicy="no-referrer-when-downgrade"
+        title="吸菸地圖"
+      ></iframe>
+      <div id="map-overlay" class="map-overlay" aria-live="polite"></div>
+    </div>
+  </main>
+
+  <footer>
+    <p>
+      <span data-i18n="footerText">© <span id="year"></span> 吸菸地圖 SmokeMap｜資料來源：Google 地圖｜</span>
+      <span class="warning" data-i18n="healthWarning">⚠ 吸菸有害健康，請在合法吸菸區吸菸</span>
+    </p>
+  </footer>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast" role="alert" aria-live="assertive"></div>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
