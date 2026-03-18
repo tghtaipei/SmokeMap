@@ -31,9 +31,12 @@
             placeholder="搜尋地點、地址..."
             autocomplete="off"
             aria-label="搜尋地點"
+            aria-autocomplete="list"
+            aria-controls="search-dropdown"
           />
           <button id="search-btn" data-i18n="search" aria-label="搜尋">搜尋</button>
         </div>
+        <div id="search-dropdown" class="search-dropdown hidden" role="listbox"></div>
       </div>
 
       <!-- Actions -->

@@ -56,7 +56,7 @@ let toastTimeout = null;
 /* ===========================
    DOM References (set on DOMContentLoaded)
    =========================== */
-let $map, $overlay, $searchInput, $searchBtn, $locationBtn, $langToggle, $toast;
+let $map, $overlay, $searchInput, $searchBtn, $locationBtn, $langToggle, $toast, $dropdown;
 
 /* ===========================
    Language / i18n
@@ -131,10 +131,68 @@ function centerMap(lat, lng, zoom = 15) {
 }
 
 /* ===========================
+   Autocomplete dropdown
+   =========================== */
+let suggestTimer = null;
+
+function hideDropdown() {
+  $dropdown.classList.add('hidden');
+  $dropdown.innerHTML = '';
+}
+
+function renderDropdown(results) {
+  $dropdown.innerHTML = '';
+  if (!results.length) {
+    hideDropdown();
+    return;
+  }
+  results.forEach(r => {
+    const parts  = r.display_name.split(',');
+    const main   = parts[0].trim();
+    const sub    = parts.slice(1, 3).join(',').trim();
+
+    const item = document.createElement('div');
+    item.className = 'dropdown-item';
+    item.setAttribute('role', 'option');
+    item.innerHTML =
+      `<div class="item-main">${main}</div>` +
+      (sub ? `<div class="item-sub">${sub}</div>` : '');
+
+    item.addEventListener('mousedown', e => {
+      // mousedown fires before blur; prevent input losing focus first
+      e.preventDefault();
+      $searchInput.value = main;
+      hideDropdown();
+      centerMap(parseFloat(r.lat), parseFloat(r.lon), 15);
+      showToast(`📍 ${main}`, 'success', 4000);
+    });
+    $dropdown.appendChild(item);
+  });
+  $dropdown.classList.remove('hidden');
+}
+
+async function fetchSuggestions(query) {
+  if (query.length < 2) { hideDropdown(); return; }
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?` +
+      new URLSearchParams({
+        q: query, format: 'json', limit: '6',
+        countrycodes: 'tw', addressdetails: '0',
+      });
+    const response = await fetch(url, {
+      headers: { 'Accept-Language': currentLang === 'zh' ? 'zh-TW,zh' : 'en' },
+    });
+    if (!response.ok) return;
+    renderDropdown(await response.json());
+  } catch (_) {}
+}
+
+/* ===========================
    Search (Nominatim geocoding)
    =========================== */
 async function searchLocation() {
   const query = $searchInput.value.trim();
+  hideDropdown();
   if (!query) {
     showToast(t('emptyQuery'), 'info');
     $searchInput.focus();
@@ -147,7 +205,10 @@ async function searchLocation() {
 
   try {
     const url = `https://nominatim.openstreetmap.org/search?` +
-      new URLSearchParams({ q: query, format: 'json', limit: '1', addressdetails: '0' });
+      new URLSearchParams({
+        q: query, format: 'json', limit: '1',
+        countrycodes: 'tw', addressdetails: '0',
+      });
 
     const response = await fetch(url, {
       headers: { 'Accept-Language': currentLang === 'zh' ? 'zh-TW,zh' : 'en' },
@@ -220,6 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $locationBtn = document.getElementById('location-btn');
   $langToggle  = document.getElementById('lang-toggle');
   $toast       = document.getElementById('toast');
+  $dropdown    = document.getElementById('search-dropdown');
 
   // Attach map load event to hide overlay
   $map.addEventListener('load', hideOverlay);
@@ -228,6 +290,20 @@ document.addEventListener('DOMContentLoaded', () => {
   $searchBtn.addEventListener('click', searchLocation);
   $searchInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') searchLocation();
+    if (e.key === 'Escape') hideDropdown();
+  });
+
+  // Live suggestions
+  $searchInput.addEventListener('input', () => {
+    clearTimeout(suggestTimer);
+    const q = $searchInput.value.trim();
+    if (q.length < 2) { hideDropdown(); return; }
+    suggestTimer = setTimeout(() => fetchSuggestions(q), 300);
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.search-container')) hideDropdown();
   });
 
   // Location
