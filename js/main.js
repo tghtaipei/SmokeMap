@@ -50,6 +50,13 @@ const TRANSLATIONS = {
 const BASE_MAP_URL =
   'https://www.google.com/maps/d/u/0/embed?mid=1A9MhjU-EbBghtXae0MewBZMFnrQzwxE&ehbc=2E312F';
 
+function getMapSrc(lat, lng, zoom) {
+  const hl = currentLang === 'zh' ? 'zh-TW' : 'en';
+  let url = `${BASE_MAP_URL}&hl=${hl}`;
+  if (lat != null) url += `&ll=${lat},${lng}&z=${zoom}`;
+  return url;
+}
+
 let currentLang  = 'zh';
 let toastTimeout = null;
 
@@ -89,6 +96,13 @@ function applyLanguage(lang) {
 
   // Persist preference
   try { localStorage.setItem('smokemap-lang', lang); } catch (_) {}
+
+  // Reload map with new language (preserve current src params if any)
+  if ($map) {
+    const cur = new URL($map.src || getMapSrc());
+    cur.searchParams.set('hl', lang === 'zh' ? 'zh-TW' : 'en');
+    $map.src = cur.toString();
+  }
 }
 
 function toggleLanguage() {
@@ -126,8 +140,7 @@ function hideOverlay() {
  */
 function centerMap(lat, lng, zoom = 15) {
   showOverlay(t('mapLoading'));
-  const newSrc = `${BASE_MAP_URL}&ll=${lat},${lng}&z=${zoom}`;
-  $map.src = newSrc;
+  $map.src = getMapSrc(lat, lng, zoom);
 }
 
 /* ===========================
