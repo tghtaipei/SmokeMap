@@ -26,6 +26,25 @@ def tag(name):
 
 
 def fetch_raw():
+    """Try curl first (handles Google redirects better), fall back to urllib."""
+    import subprocess
+    try:
+        result = subprocess.run([
+            'curl', '-sL', '--max-time', '30',
+            '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            '-H', 'Accept: application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,*/*',
+            '-H', 'Accept-Language: zh-TW,zh;q=0.9',
+            '--compressed',
+            KML_URL,
+        ], capture_output=True, timeout=35)
+        print(f'[curl] exit={result.returncode}  size={len(result.stdout)}  stderr={result.stderr[:300].decode(errors="replace")}', file=sys.stderr)
+        if result.returncode == 0 and len(result.stdout) > 100:
+            return result.stdout
+        print(f'[curl] first 500 bytes: {result.stdout[:500]}', file=sys.stderr)
+    except Exception as e:
+        print(f'[curl] exception: {e}', file=sys.stderr)
+
+    # Fallback: urllib
     req = urllib.request.Request(KML_URL, headers={
         'User-Agent': 'Mozilla/5.0 (compatible; SmokeMap KML fetcher)',
         'Accept': 'application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,*/*',
@@ -33,7 +52,7 @@ def fetch_raw():
     with urllib.request.urlopen(req, timeout=30) as resp:
         ct = resp.headers.get('Content-Type', '')
         data = resp.read()
-    print(f'[fetch] status=200  content-type={ct}  size={len(data)} bytes', file=sys.stderr)
+    print(f'[urllib] content-type={ct}  size={len(data)} bytes', file=sys.stderr)
     return data
 
 
@@ -126,10 +145,14 @@ def main():
 
     out_path = os.path.abspath(OUT)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, 'w', encoding='utf-8') as f:
-        json.dump(locations, f, ensure_ascii=False, indent=2)
 
-    print(f'[done] Wrote {len(locations)} location(s) → {out_path}', file=sys.stderr)
+    if locations:
+        with open(out_path, 'w', encoding='utf-8') as f:
+            json.dump(locations, f, ensure_ascii=False, indent=2)
+        print(f'[done] Wrote {len(locations)} location(s) → {out_path}', file=sys.stderr)
+    else:
+        # Keep existing file intact (may contain hardcoded fallback data)
+        print(f'[done] KML fetch returned 0 locations — existing {out_path} preserved', file=sys.stderr)
     # Always exit 0 so deployment is never blocked
     sys.exit(0)
 
