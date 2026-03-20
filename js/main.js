@@ -241,7 +241,9 @@ function filterLocations(query) {
   const q = query.toLowerCase();
   return mapLocations.filter(loc =>
     loc.name.toLowerCase().includes(q) ||
-    loc.address.toLowerCase().includes(q)
+    loc.address.toLowerCase().includes(q) ||
+    (loc.district || '').toLowerCase().includes(q) ||
+    (loc.type || '').toLowerCase().includes(q)
   ).slice(0, 8);
 }
 
