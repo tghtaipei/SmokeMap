@@ -80,7 +80,7 @@ function applyLanguage(lang) {
   $langToggle.textContent = lang === 'zh' ? 'EN' : '中';
   $langToggle.setAttribute('aria-label', lang === 'zh' ? 'Switch to English' : '切換為中文');
 
-  switchTileLayer(lang);
+  switchMapLanguage(lang);
 
   try { localStorage.setItem('smokemap-lang', lang); } catch (_) {}
 }
@@ -100,39 +100,11 @@ function showToast(message, type = 'info', duration = 3000) {
 }
 
 /* ===========================
-   Tile Layer Configs
+   MapLibre GL Map
    =========================== */
-const TILE_LAYERS = {
-  zh: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  },
-  en: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles © <a href="https://www.esri.com/">Esri</a> &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong)',
-  },
-};
+const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
-let currentTileLayer = null;
-
-function switchTileLayer(lang) {
-  if (!leafletMap) return;
-  if (currentTileLayer) leafletMap.removeLayer(currentTileLayer);
-  const cfg = TILE_LAYERS[lang] || TILE_LAYERS.zh;
-  currentTileLayer = L.tileLayer(cfg.url, { attribution: cfg.attribution, maxZoom: 19 });
-  currentTileLayer.addTo(leafletMap);
-}
-
-/* ===========================
-   Leaflet Map
-   =========================== */
-const SMOKE_ICON = L.divIcon({
-  className: '',
-  html: '<div style="background:#8B1A1A;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.4);font-size:15px;cursor:pointer;">🚬</div>',
-  iconSize:    [30, 30],
-  iconAnchor:  [15, 15],
-  popupAnchor: [0, -18],
-});
+let originalTextFields = null;
 
 function buildPopup(loc) {
   let html = `<strong style="font-size:1em">${loc.name}</strong>`;
@@ -143,24 +115,61 @@ function buildPopup(loc) {
   return html;
 }
 
-function initMap() {
-  leafletMap = L.map('smoke-map', {
-    center: [25.0478, 121.5170],
-    zoom: 13,
-    zoomControl: true,
-  });
+function saveOriginalTextFields() {
+  if (originalTextFields) return;
+  originalTextFields = {};
+  leafletMap.getStyle().layers
+    .filter(l => l.type === 'symbol' && l.layout && l.layout['text-field'] !== undefined)
+    .forEach(l => { originalTextFields[l.id] = l.layout['text-field']; });
 }
 
+function switchMapLanguage(lang) {
+  if (!leafletMap || !leafletMap.isStyleLoaded()) return;
+  saveOriginalTextFields();
+  leafletMap.getStyle().layers
+    .filter(l => l.type === 'symbol')
+    .forEach(l => {
+      try {
+        if (lang === 'en') {
+          leafletMap.setLayoutProperty(l.id, 'text-field',
+            ['coalesce', ['get', 'name_en'], ['get', 'name']]);
+        } else if (originalTextFields && originalTextFields[l.id] !== undefined) {
+          leafletMap.setLayoutProperty(l.id, 'text-field', originalTextFields[l.id]);
+        }
+      } catch (_) {}
+    });
+}
+
+function initMap() {
+  leafletMap = new maplibregl.Map({
+    container: 'smoke-map',
+    style: OPENFREEMAP_STYLE,
+    center: [121.5170, 25.0478],
+    zoom: 13,
+  });
+  leafletMap.addControl(new maplibregl.NavigationControl(), 'top-left');
+  return new Promise(resolve => leafletMap.once('load', resolve));
+}
+
+let mapMarkers = [];
+
 function addMarkers() {
+  mapMarkers.forEach(m => m.remove());
+  mapMarkers = [];
   mapLocations.forEach(loc => {
-    L.marker([loc.lat, loc.lng], { icon: SMOKE_ICON })
-      .bindPopup(buildPopup(loc), { maxWidth: 240 })
+    const el = document.createElement('div');
+    el.style.cssText = 'background:#8B1A1A;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.4);font-size:15px;cursor:pointer;';
+    el.textContent = '🚬';
+    const marker = new maplibregl.Marker({ element: el })
+      .setLngLat([loc.lng, loc.lat])
+      .setPopup(new maplibregl.Popup({ maxWidth: '240px', offset: 18 }).setHTML(buildPopup(loc)))
       .addTo(leafletMap);
+    mapMarkers.push(marker);
   });
 }
 
 function centerMap(lat, lng, zoom = 16) {
-  leafletMap.setView([lat, lng], zoom);
+  leafletMap.flyTo({ center: [lng, lat], zoom });
 }
 
 /* ===========================
@@ -303,8 +312,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   $toast       = document.getElementById('toast');
   $dropdown    = document.getElementById('search-dropdown');
 
-  // Init Leaflet map
-  initMap();
+  // Init MapLibre map (await style load)
+  await initMap();
 
   // Load location data then place markers
   await loadLocations();
