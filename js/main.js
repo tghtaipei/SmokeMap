@@ -5,65 +5,56 @@
    =========================== */
 const TRANSLATIONS = {
   zh: {
-    title:           '吸菸地圖',
-    subtitle:        '合法吸菸區查詢',
-    searchPlaceholder: '搜尋地點、地址...',
-    search:          '搜尋',
-    searching:       '搜尋中...',
-    myLocation:      '我的位置',
-    footerText:      `© ${new Date().getFullYear()} 吸菸地圖 SmokeMap｜資料來源：Google 地圖｜`,
-    healthWarning:   '⚠ 吸菸有害健康，請在合法吸菸區吸菸',
-    locating:        '正在取得位置...',
-    locateSuccess:   '已定位到您的位置',
-    locateDenied:    '位置存取被拒絕，請檢查瀏覽器設定',
-    locateError:     '無法取得位置，請稍後再試',
+    title:             '吸菸地圖',
+    subtitle:          '合法吸菸區查詢',
+    searchPlaceholder: '搜尋地點、地址、行政區...',
+    search:            '搜尋',
+    myLocation:        '我的位置',
+    footerText:        `© ${new Date().getFullYear()} 吸菸地圖 SmokeMap｜資料來源：台北市政府開放資料｜`,
+    healthWarning:     '⚠ 吸菸有害健康，請在合法吸菸區吸菸',
+    locating:          '正在取得位置...',
+    locateSuccess:     '已定位到您的位置',
+    locateDenied:      '位置存取被拒絕，請檢查瀏覽器設定',
+    locateError:       '無法取得位置，請稍後再試',
     locateUnsupported: '您的瀏覽器不支援定位功能',
-    notFound:        '找不到該地點，請嘗試其他關鍵字',
-    searchError:     '搜尋失敗，請稍後再試',
-    emptyQuery:      '請輸入搜尋地點',
-    mapLoading:      '地圖定位中...',
+    notFound:          '找不到該地點，請嘗試其他關鍵字',
+    emptyQuery:        '請輸入搜尋地點',
+    popupHours:        '開放時間',
+    popupSub:          '位置',
+    popupType:         '類型',
   },
   en: {
-    title:           'SmokeMap',
-    subtitle:        'Legal Smoking Area Finder',
-    searchPlaceholder: 'Search location, address...',
-    search:          'Search',
-    searching:       'Searching...',
-    myLocation:      'My Location',
-    footerText:      `© ${new Date().getFullYear()} SmokeMap｜Data: Google Maps｜`,
-    healthWarning:   '⚠ Smoking is harmful to health. Please smoke in designated areas.',
-    locating:        'Getting your location...',
-    locateSuccess:   'Located your position',
-    locateDenied:    'Location access denied. Check your browser settings.',
-    locateError:     'Unable to retrieve location. Please try again.',
+    title:             'SmokeMap',
+    subtitle:          'Legal Smoking Area Finder',
+    searchPlaceholder: 'Search location, address, district...',
+    search:            'Search',
+    myLocation:        'My Location',
+    footerText:        `© ${new Date().getFullYear()} SmokeMap｜Data: Taipei City Gov Open Data｜`,
+    healthWarning:     '⚠ Smoking is harmful to health. Please smoke in designated areas.',
+    locating:          'Getting your location...',
+    locateSuccess:     'Located your position',
+    locateDenied:      'Location access denied. Check your browser settings.',
+    locateError:       'Unable to retrieve location. Please try again.',
     locateUnsupported: 'Geolocation is not supported by your browser.',
-    notFound:        'Location not found. Try a different keyword.',
-    searchError:     'Search failed. Please try again.',
-    emptyQuery:      'Please enter a location to search.',
-    mapLoading:      'Centering map...',
+    notFound:          'Location not found. Try a different keyword.',
+    emptyQuery:        'Please enter a location to search.',
+    popupHours:        'Hours',
+    popupSub:          'Location',
+    popupType:         'Type',
   },
 };
 
 /* ===========================
    State
    =========================== */
-const BASE_MAP_URL =
-  'https://www.google.com/maps/d/u/0/embed?mid=1A9MhjU-EbBghtXae0MewBZMFnrQzwxE&ehbc=2E312F';
-
-function getMapSrc(lat, lng, zoom) {
-  const hl = currentLang === 'zh' ? 'zh-TW' : 'en';
-  let url = `${BASE_MAP_URL}&hl=${hl}`;
-  if (lat != null) url += `&ll=${lat},${lng}&z=${zoom}`;
-  return url;
-}
-
 let currentLang  = 'zh';
 let toastTimeout = null;
+let leafletMap   = null;
 
 /* ===========================
-   DOM References (set on DOMContentLoaded)
+   DOM References
    =========================== */
-let $map, $overlay, $searchInput, $searchBtn, $locationBtn, $langToggle, $toast, $dropdown;
+let $searchInput, $searchBtn, $locationBtn, $langToggle, $toast, $dropdown;
 
 /* ===========================
    Language / i18n
@@ -76,33 +67,20 @@ function applyLanguage(lang) {
   currentLang = lang;
   document.documentElement.lang = lang === 'zh' ? 'zh-TW' : 'en';
 
-  // Text content
   document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = el.getAttribute('data-i18n');
-    const val = TRANSLATIONS[lang][key];
+    const val = TRANSLATIONS[lang][el.getAttribute('data-i18n')];
     if (val !== undefined) el.textContent = val;
   });
 
-  // Placeholder
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-    const key = el.getAttribute('data-i18n-placeholder');
-    const val = TRANSLATIONS[lang][key];
+    const val = TRANSLATIONS[lang][el.getAttribute('data-i18n-placeholder')];
     if (val !== undefined) el.placeholder = val;
   });
 
-  // Toggle button label
   $langToggle.textContent = lang === 'zh' ? 'EN' : '中';
   $langToggle.setAttribute('aria-label', lang === 'zh' ? 'Switch to English' : '切換為中文');
 
-  // Persist preference
   try { localStorage.setItem('smokemap-lang', lang); } catch (_) {}
-
-  // Reload map with new language (preserve current src params if any)
-  if ($map) {
-    const cur = new URL($map.src || getMapSrc());
-    cur.searchParams.set('hl', lang === 'zh' ? 'zh-TW' : 'en');
-    $map.src = cur.toString();
-  }
 }
 
 function toggleLanguage() {
@@ -116,94 +94,60 @@ function showToast(message, type = 'info', duration = 3000) {
   $toast.textContent = message;
   $toast.className   = `toast ${type} show`;
   clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => {
-    $toast.className = 'toast';
-  }, duration);
+  toastTimeout = setTimeout(() => { $toast.className = 'toast'; }, duration);
 }
 
 /* ===========================
-   Map helpers
+   Leaflet Map
    =========================== */
-function showOverlay(msg) {
-  $overlay.textContent = msg;
-  $overlay.classList.add('visible');
+const SMOKE_ICON = L.divIcon({
+  className: '',
+  html: '<div style="background:#8B1A1A;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.4);font-size:15px;cursor:pointer;">🚬</div>',
+  iconSize:    [30, 30],
+  iconAnchor:  [15, 15],
+  popupAnchor: [0, -18],
+});
+
+function buildPopup(loc) {
+  let html = `<strong style="font-size:1em">${loc.name}</strong>`;
+  if (loc.address) html += `<br><small>📍 ${loc.address}</small>`;
+  if (loc.type)    html += `<br><small>🏷 ${loc.type}</small>`;
+  if (loc.hours)   html += `<br><small>🕐 ${loc.hours}</small>`;
+  if (loc.sub)     html += `<br><small>↳ ${loc.sub}</small>`;
+  return html;
 }
 
-function hideOverlay() {
-  $overlay.classList.remove('visible');
-  $overlay.textContent = '';
+function initMap() {
+  leafletMap = L.map('smoke-map', {
+    center: [25.0478, 121.5170],
+    zoom: 13,
+    zoomControl: true,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(leafletMap);
 }
 
-/**
- * Update the embedded map to center on given coordinates.
- * Google My Maps embed supports ll=lat,lng and z=zoom.
- */
-function centerMap(lat, lng, zoom = 15) {
-  showOverlay(t('mapLoading'));
-  $map.src = getMapSrc(lat, lng, zoom);
+function addMarkers() {
+  mapLocations.forEach(loc => {
+    L.marker([loc.lat, loc.lng], { icon: SMOKE_ICON })
+      .bindPopup(buildPopup(loc), { maxWidth: 240 })
+      .addTo(leafletMap);
+  });
+}
+
+function centerMap(lat, lng, zoom = 16) {
+  leafletMap.setView([lat, lng], zoom);
 }
 
 /* ===========================
    Location data
-   Loaded from data/locations.json (pre-built by CI), or fetched live
-   from Google My Maps KML when the JSON is empty.
    =========================== */
 let mapLocations = [];
 
-const MAP_ID      = '1A9MhjU-EbBghtXae0MewBZMFnrQzwxE';
-const KML_URL     = `https://www.google.com/maps/d/u/0/kml?mid=${MAP_ID}&forcekml=1`;
-const CACHE_KEY   = 'smokemap-locations-v1';
-const CACHE_TTL   = 6 * 60 * 60 * 1000; // 6 hours
-
-function parseKML(kmlText) {
-  const doc = new DOMParser().parseFromString(kmlText, 'application/xml');
-  const results = [];
-  doc.querySelectorAll('Placemark').forEach(pm => {
-    const name = pm.querySelector('name')?.textContent?.trim() || '';
-    if (!name) return;
-
-    let address = '';
-    pm.querySelectorAll('SimpleData, Data').forEach(el => {
-      const fn = (el.getAttribute('name') || '').toLowerCase();
-      if (['地址', 'address', 'addr'].includes(fn)) {
-        address = (el.textContent || el.querySelector('value')?.textContent || '').trim();
-      }
-    });
-
-    const coordsText = pm.querySelector('coordinates')?.textContent?.trim();
-    if (!coordsText) return;
-    const [lngS, latS] = coordsText.split(',');
-    const lat = parseFloat(latS), lng = parseFloat(lngS);
-    if (isNaN(lat) || isNaN(lng)) return;
-
-    results.push({ name, address, lat, lng });
-  });
-  return results;
-}
-
-async function fetchKMLLive() {
-  // Try direct fetch (may succeed if CORS headers are present)
-  const attempts = [
-    () => fetch(KML_URL).then(r => r.ok ? r.text() : Promise.reject()),
-    () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(KML_URL)}`)
-            .then(r => r.ok ? r.json() : Promise.reject())
-            .then(d => d.contents),
-    () => fetch(`https://corsproxy.io/?${encodeURIComponent(KML_URL)}`).then(r => r.ok ? r.text() : Promise.reject()),
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      const kmlText = await attempt();
-      if (kmlText && kmlText.includes('<Placemark')) {
-        return parseKML(kmlText);
-      }
-    } catch (_) {}
-  }
-  return [];
-}
-
 async function loadLocations() {
-  // 1. Try pre-built JSON
   try {
     const resp = await fetch('data/locations.json');
     if (resp.ok) {
@@ -214,44 +158,21 @@ async function loadLocations() {
       }
     }
   } catch (_) {}
-
-  // 2. Try localStorage cache
-  try {
-    const cached = localStorage.getItem(CACHE_KEY);
-    if (cached) {
-      const { ts, locs } = JSON.parse(cached);
-      if (Date.now() - ts < CACHE_TTL && locs.length > 0) {
-        mapLocations = locs;
-        return;
-      }
-    }
-  } catch (_) {}
-
-  // 3. Fetch live KML
-  const locs = await fetchKMLLive();
-  if (locs.length > 0) {
-    mapLocations = locs;
-    try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), locs }));
-    } catch (_) {}
-  }
 }
 
 function filterLocations(query) {
   const q = query.toLowerCase();
   return mapLocations.filter(loc =>
     loc.name.toLowerCase().includes(q) ||
-    loc.address.toLowerCase().includes(q) ||
+    (loc.address  || '').toLowerCase().includes(q) ||
     (loc.district || '').toLowerCase().includes(q) ||
-    (loc.type || '').toLowerCase().includes(q)
+    (loc.type     || '').toLowerCase().includes(q)
   ).slice(0, 8);
 }
 
 /* ===========================
    Autocomplete dropdown
    =========================== */
-let suggestTimer = null;
-
 function hideDropdown() {
   $dropdown.classList.add('hidden');
   $dropdown.innerHTML = '';
@@ -341,12 +262,10 @@ function getMyLocation() {
     error => {
       $locationBtn.classList.remove('loading');
       $locationBtn.disabled = false;
-
-      if (error.code === error.PERMISSION_DENIED) {
-        showToast(t('locateDenied'), 'error', 5000);
-      } else {
-        showToast(t('locateError'), 'error');
-      }
+      showToast(
+        error.code === error.PERMISSION_DENIED ? t('locateDenied') : t('locateError'),
+        'error', 5000
+      );
     },
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
   );
@@ -355,10 +274,7 @@ function getMyLocation() {
 /* ===========================
    Init
    =========================== */
-document.addEventListener('DOMContentLoaded', () => {
-  // Grab DOM references
-  $map         = document.getElementById('smoke-map');
-  $overlay     = document.getElementById('map-overlay');
+document.addEventListener('DOMContentLoaded', async () => {
   $searchInput = document.getElementById('search-input');
   $searchBtn   = document.getElementById('search-btn');
   $locationBtn = document.getElementById('location-btn');
@@ -366,8 +282,12 @@ document.addEventListener('DOMContentLoaded', () => {
   $toast       = document.getElementById('toast');
   $dropdown    = document.getElementById('search-dropdown');
 
-  // Attach map load event to hide overlay
-  $map.addEventListener('load', hideOverlay);
+  // Init Leaflet map
+  initMap();
+
+  // Load location data then place markers
+  await loadLocations();
+  addMarkers();
 
   // Search events
   $searchBtn.addEventListener('click', searchLocation);
@@ -375,31 +295,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Enter') searchLocation();
     if (e.key === 'Escape') hideDropdown();
   });
-
-  // Live suggestions (instant, local data)
   $searchInput.addEventListener('input', () => {
     showSuggestions($searchInput.value.trim());
   });
 
-  // Close dropdown when clicking outside
   document.addEventListener('click', e => {
     if (!e.target.closest('.search-container')) hideDropdown();
   });
 
-  // Location
   $locationBtn.addEventListener('click', getMyLocation);
-
-  // Language toggle
   $langToggle.addEventListener('click', toggleLanguage);
 
-  // Footer year
   const yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-  // Load map locations for search
-  loadLocations();
-
-  // Restore language preference
   let savedLang = 'zh';
   try { savedLang = localStorage.getItem('smokemap-lang') || 'zh'; } catch (_) {}
   applyLanguage(savedLang);

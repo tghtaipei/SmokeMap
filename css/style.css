@@ -276,11 +276,9 @@ main {
   height: 100%;
 }
 
-.map-container iframe {
+#smoke-map {
   width: 100%;
   height: 100%;
-  border: none;
-  display: block;
 }
 
 /* Overlay shown while relocating */
