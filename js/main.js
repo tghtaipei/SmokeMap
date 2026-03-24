@@ -104,8 +104,6 @@ function showToast(message, type = 'info', duration = 3000) {
    =========================== */
 const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
-let originalTextFields = null;
-
 function buildPopup(loc) {
   let html = `<strong style="font-size:1em">${loc.name}</strong>`;
   if (loc.address) html += `<br><small>📍 ${loc.address}</small>`;
@@ -115,28 +113,19 @@ function buildPopup(loc) {
   return html;
 }
 
-function saveOriginalTextFields() {
-  if (originalTextFields) return;
-  originalTextFields = {};
-  leafletMap.getStyle().layers
-    .filter(l => l.type === 'symbol' && l.layout && l.layout['text-field'] !== undefined)
-    .forEach(l => { originalTextFields[l.id] = l.layout['text-field']; });
-}
-
 function switchMapLanguage(lang) {
   if (!leafletMap || !leafletMap.isStyleLoaded()) return;
-  saveOriginalTextFields();
+  const nameField = lang === 'en'
+    ? ['coalesce', ['get', 'name_en'], ['get', 'name']]
+    : ['get', 'name'];
   leafletMap.getStyle().layers
-    .filter(l => l.type === 'symbol')
+    .filter(l => {
+      if (l.type !== 'symbol') return false;
+      const tf = JSON.stringify(l.layout && l.layout['text-field']);
+      return tf && (tf.includes('"name"') || tf.includes('"name_en"'));
+    })
     .forEach(l => {
-      try {
-        if (lang === 'en') {
-          leafletMap.setLayoutProperty(l.id, 'text-field',
-            ['coalesce', ['get', 'name_en'], ['get', 'name']]);
-        } else if (originalTextFields && originalTextFields[l.id] !== undefined) {
-          leafletMap.setLayoutProperty(l.id, 'text-field', originalTextFields[l.id]);
-        }
-      } catch (_) {}
+      try { leafletMap.setLayoutProperty(l.id, 'text-field', nameField); } catch (_) {}
     });
 }
 
