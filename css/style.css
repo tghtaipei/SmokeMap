@@ -48,7 +48,7 @@ header {
   align-items: center;
   padding: 0 20px;
   box-shadow: var(--shadow);
-  z-index: 100;
+  z-index: 1001;
   flex-shrink: 0;
 }
 
@@ -115,7 +115,7 @@ header {
   background: var(--white);
   border-radius: var(--radius);
   box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-  z-index: 300;
+  z-index: 1002;
   overflow: hidden;
 }
 
