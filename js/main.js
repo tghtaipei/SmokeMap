@@ -80,6 +80,8 @@ function applyLanguage(lang) {
   $langToggle.textContent = lang === 'zh' ? 'EN' : '中';
   $langToggle.setAttribute('aria-label', lang === 'zh' ? 'Switch to English' : '切換為中文');
 
+  switchTileLayer(lang);
+
   try { localStorage.setItem('smokemap-lang', lang); } catch (_) {}
 }
 
@@ -95,6 +97,30 @@ function showToast(message, type = 'info', duration = 3000) {
   $toast.className   = `toast ${type} show`;
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => { $toast.className = 'toast'; }, duration);
+}
+
+/* ===========================
+   Tile Layer Configs
+   =========================== */
+const TILE_LAYERS = {
+  zh: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  en: {
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>',
+  },
+};
+
+let currentTileLayer = null;
+
+function switchTileLayer(lang) {
+  if (!leafletMap) return;
+  if (currentTileLayer) leafletMap.removeLayer(currentTileLayer);
+  const cfg = TILE_LAYERS[lang] || TILE_LAYERS.zh;
+  currentTileLayer = L.tileLayer(cfg.url, { attribution: cfg.attribution, maxZoom: 19 });
+  currentTileLayer.addTo(leafletMap);
 }
 
 /* ===========================
@@ -123,11 +149,6 @@ function initMap() {
     zoom: 13,
     zoomControl: true,
   });
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19,
-  }).addTo(leafletMap);
 }
 
 function addMarkers() {
