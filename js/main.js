@@ -190,26 +190,37 @@ function convertRecord(r) {
 }
 
 async function loadLocations() {
-  try {
-    const resp = await fetch(TAIPEI_API);
-    if (resp.ok) {
-      const json = await resp.json();
-      const result = json.result || json;
-      const records = result.results || result.data || [];
-      if (records.length > 0) {
-        mapLocations = records.map(convertRecord).filter(Boolean);
-        return;
-      }
-    }
-  } catch (e) {
-    console.warn('[SmokeMap] API fetch failed, trying fallback:', e);
-  }
-  // Fallback: static JSON
+  // Step 1: load static snapshot immediately (fast first paint)
   try {
     const resp = await fetch('data/locations.json');
     if (resp.ok) {
       const data = await resp.json();
       if (Array.isArray(data) && data.length > 0) mapLocations = data;
+    }
+  } catch (_) {}
+
+  // Step 2: revalidate from API in background (don't block rendering)
+  revalidateInBackground();
+}
+
+async function revalidateInBackground() {
+  try {
+    const resp = await fetch(TAIPEI_API);
+    if (!resp.ok) return;
+    const json = await resp.json();
+    const result = json.result || json;
+    const records = result.results || result.data || [];
+    if (!records.length) return;
+
+    const fresh = records.map(convertRecord).filter(Boolean);
+    if (!fresh.length) return;
+
+    // Re-render only if data actually changed
+    if (fresh.length !== mapLocations.length ||
+        JSON.stringify(fresh.map(l => l.name + l.lat + l.lng)) !==
+        JSON.stringify(mapLocations.map(l => l.name + l.lat + l.lng))) {
+      mapLocations = fresh;
+      addMarkers();
     }
   } catch (_) {}
 }
