@@ -54,13 +54,19 @@ def convert(records):
     out = []
     for r in records:
         try:
-            lat = float(r.get('緯度') or r.get('WGS84緯度') or 0)
-            lng = float(r.get('經度') or r.get('WGS84經度') or 0)
+            a = float(r.get('緯度') or r.get('WGS84緯度') or 0)
+            b = float(r.get('經度') or r.get('WGS84經度') or 0)
         except ValueError:
             continue
-        if not lat or not lng or not (-90 < lat < 90) or not (-180 < lng < 180):
-            print(f'[skip] invalid coords lat={lat} lng={lng}', file=sys.stderr)
+        if not a or not b:
             continue
+        # 自動偵測並修正欄位對調：緯度應介於 ±90，經度介於 ±180
+        if abs(a) <= 90 and abs(b) <= 180:
+            lat, lng = a, b   # 正常順序
+        elif abs(b) <= 90 and abs(a) <= 180:
+            lat, lng = b, a   # API 欄位對調，修正之
+        else:
+            continue          # 無效座標，略過
         name     = (r.get('地點') or r.get('地點名稱') or '').strip()
         address  = (r.get('地址') or '').strip()
         district = (r.get('行政區') or '').strip()
