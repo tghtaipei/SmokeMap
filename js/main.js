@@ -148,6 +148,9 @@ function addMarkers() {
   mapMarkers.forEach(m => m.remove());
   mapMarkers = [];
   mapLocations.forEach(loc => {
+    if (!isFinite(loc.lat) || !isFinite(loc.lng) ||
+        loc.lat < -90 || loc.lat > 90 ||
+        loc.lng < -180 || loc.lng > 180) return;
     const el = document.createElement('div');
     el.style.cssText = 'background:#8B1A1A;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.4);font-size:15px;cursor:pointer;';
     el.textContent = '🚬';

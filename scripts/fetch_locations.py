@@ -58,7 +58,8 @@ def convert(records):
             lng = float(r.get('經度') or r.get('WGS84經度') or 0)
         except ValueError:
             continue
-        if not lat or not lng:
+        if not lat or not lng or not (-90 < lat < 90) or not (-180 < lng < 180):
+            print(f'[skip] invalid coords lat={lat} lng={lng}', file=sys.stderr)
             continue
         name     = (r.get('地點') or r.get('地點名稱') or '').strip()
         address  = (r.get('地址') or '').strip()
