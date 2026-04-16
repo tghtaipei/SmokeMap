@@ -115,6 +115,8 @@ const TYPE_EN = {
 function buildPopup(loc) {
   const type = currentLang === 'en' ? (TYPE_EN[loc.type] || loc.type) : loc.type;
   let html = `<strong style="font-size:1em">${loc.name}</strong>`;
+  if (currentLang === 'en' && loc.name_en)
+    html += `<br><small style="color:#666">${loc.name_en}</small>`;
   if (loc.address) html += `<br><small>📍 ${loc.address}</small>`;
   if (type)        html += `<br><small>🏷 ${type}</small>`;
   if (loc.hours)   html += `<br><small>🕐 ${loc.hours}</small>`;
@@ -224,8 +226,9 @@ function renderDropdown(locations) {
     const item = document.createElement('div');
     item.className = 'dropdown-item';
     item.setAttribute('role', 'option');
+    const nameEn = (currentLang === 'en' && loc.name_en) ? ` (${loc.name_en})` : '';
     item.innerHTML =
-      `<div class="item-main">${loc.name}</div>` +
+      `<div class="item-main">${loc.name}${nameEn}</div>` +
       (loc.address ? `<div class="item-sub">${loc.address}</div>` : '');
 
     item.addEventListener('mousedown', e => {

@@ -9,9 +9,11 @@ Dataset: 臺北市合法吸菸區 (uuid: acaa0f43-3b92-4241-b5eb-3f7fdd76b74f)
 """
 import urllib.request
 import urllib.error
+import urllib.parse
 import json
 import sys
 import os
+import time
 
 # Taipei Open Data API
 TAIPEI_API = (
@@ -49,6 +51,26 @@ def fetch_json(url):
         return json.loads(resp.read())
 
 
+def translate_name(text):
+    """Translate Chinese location name to English via MyMemory free API."""
+    if not text:
+        return ''
+    try:
+        url = ('https://api.mymemory.translated.net/get?q='
+               + urllib.parse.quote(text)
+               + '&langpair=zh-TW%7Cen')
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        translated = (data.get('responseData') or {}).get('translatedText', '')
+        # Discard if API returned the original text or an error message
+        if translated and translated != text and 'MYMEMORY' not in translated.upper():
+            return translated
+    except Exception as e:
+        print(f'[translate] "{text}": {e}', file=sys.stderr)
+    return ''
+
+
 def convert(records):
     """Convert Taipei Open Data records to locations.json format."""
     out = []
@@ -78,7 +100,11 @@ def convert(records):
                     r.get('圖片連結') or r.get('圖片') or '').strip()
         if not name:
             continue
+        time.sleep(0.15)   # rate limit: ~6-7 req/s, within MyMemory free tier
+        name_en = translate_name(name)
+        print(f'[translate] {name!r} → {name_en!r}', file=sys.stderr)
         entry = {'name': name, 'address': address, 'lat': lat, 'lng': lng}
+        if name_en:  entry['name_en']  = name_en
         if district: entry['district'] = district
         if kind:     entry['type']     = kind
         if hours:    entry['hours']    = hours
