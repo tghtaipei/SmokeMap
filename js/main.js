@@ -87,6 +87,7 @@ function applyLanguage(lang) {
 
 function toggleLanguage() {
   applyLanguage(currentLang === 'zh' ? 'en' : 'zh');
+  if (mapLocations.length > 0) addMarkers();
 }
 
 /* ===========================
@@ -104,10 +105,18 @@ function showToast(message, type = 'info', duration = 3000) {
    =========================== */
 const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
+// 樣態欄位英文對照表
+const TYPE_EN = {
+  '戶外封閉式吸菸區':   'Outdoor Enclosed Smoking Area',
+  '戶外非封閉式吸菸區':  'Outdoor Open-Air Smoking Area',
+  '室內吸菸室':         'Indoor Smoking Room',
+};
+
 function buildPopup(loc) {
+  const type = currentLang === 'en' ? (TYPE_EN[loc.type] || loc.type) : loc.type;
   let html = `<strong style="font-size:1em">${loc.name}</strong>`;
   if (loc.address) html += `<br><small>📍 ${loc.address}</small>`;
-  if (loc.type)    html += `<br><small>🏷 ${loc.type}</small>`;
+  if (type)        html += `<br><small>🏷 ${type}</small>`;
   if (loc.hours)   html += `<br><small>🕐 ${loc.hours}</small>`;
   if (loc.sub)     html += `<br><small>↳ ${loc.sub}</small>`;
   if (loc.photo && loc.photo.startsWith('http'))
