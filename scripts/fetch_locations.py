@@ -27,9 +27,67 @@ TAIPEI_API_ALT = (
     '?scope=resourceAquire&limit=1000&offset=0'
 )
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'locations.json')
+_BASE = os.path.dirname(os.path.abspath(__file__))
+OUT        = os.path.join(_BASE, '..', 'data', 'locations.json')
+TRANS_FILE = os.path.join(_BASE, '..', 'data', 'translations.json')
+
+# ── Translation cache ────────────────────────────────────────────────────────
+_cache: dict = {}
+_cache_dirty = False
 
 
+def load_cache():
+    global _cache
+    try:
+        with open(TRANS_FILE, encoding='utf-8') as f:
+            _cache = json.load(f)
+        print(f'[cache] Loaded {len(_cache)} cached translations', file=sys.stderr)
+    except Exception:
+        _cache = {}
+
+
+def save_cache():
+    global _cache_dirty
+    if not _cache_dirty:
+        print('[cache] No new translations — cache unchanged', file=sys.stderr)
+        return
+    path = os.path.abspath(TRANS_FILE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(_cache, f, ensure_ascii=False, indent=2, sort_keys=True)
+    print(f'[cache] Saved {len(_cache)} translations → {path}', file=sys.stderr)
+    _cache_dirty = False
+
+
+def translate(text: str) -> str:
+    """Return English translation, reading cache first and calling API only for new text."""
+    global _cache_dirty
+    if not text:
+        return ''
+    if text in _cache:
+        return _cache[text]   # cache hit — no API call
+    # Cache miss — call MyMemory free API (no key required)
+    result = ''
+    try:
+        url = ('https://api.mymemory.translated.net/get?q='
+               + urllib.parse.quote(text)
+               + '&langpair=zh-TW%7Cen')
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        translated = (data.get('responseData') or {}).get('translatedText', '')
+        if translated and translated != text and 'MYMEMORY' not in translated.upper():
+            result = translated
+    except Exception as e:
+        print(f'[translate] error for "{text}": {e}', file=sys.stderr)
+    time.sleep(0.15)   # rate-limit: stay within free tier (~6 req/s)
+    _cache[text] = result
+    _cache_dirty = True
+    print(f'[translate] {text!r} → {result!r}', file=sys.stderr)
+    return result
+
+
+# ── Data fetch ───────────────────────────────────────────────────────────────
 def fetch_json(url):
     import subprocess
     try:
@@ -51,26 +109,6 @@ def fetch_json(url):
         return json.loads(resp.read())
 
 
-def translate_name(text):
-    """Translate Chinese location name to English via MyMemory free API."""
-    if not text:
-        return ''
-    try:
-        url = ('https://api.mymemory.translated.net/get?q='
-               + urllib.parse.quote(text)
-               + '&langpair=zh-TW%7Cen')
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-        translated = (data.get('responseData') or {}).get('translatedText', '')
-        # Discard if API returned the original text or an error message
-        if translated and translated != text and 'MYMEMORY' not in translated.upper():
-            return translated
-    except Exception as e:
-        print(f'[translate] "{text}": {e}', file=sys.stderr)
-    return ''
-
-
 def convert(records):
     """Convert Taipei Open Data records to locations.json format."""
     out = []
@@ -84,11 +122,12 @@ def convert(records):
             continue
         # 自動偵測並修正欄位對調：緯度應介於 ±90，經度介於 ±180
         if abs(a) <= 90 and abs(b) <= 180:
-            lat, lng = a, b   # 正常順序
+            lat, lng = a, b
         elif abs(b) <= 90 and abs(a) <= 180:
-            lat, lng = b, a   # API 欄位對調，修正之
+            lat, lng = b, a
         else:
-            continue          # 無效座標，略過
+            continue
+
         name     = (r.get('地點') or r.get('地點名稱') or '').strip()
         address  = (r.get('地址') or '').strip()
         district = (r.get('行政區') or '').strip()
@@ -100,27 +139,35 @@ def convert(records):
                     r.get('圖片連結') or r.get('圖片') or '').strip()
         if not name:
             continue
-        time.sleep(0.15)   # rate limit: ~6-7 req/s, within MyMemory free tier
-        name_en = translate_name(name)
-        print(f'[translate] {name!r} → {name_en!r}', file=sys.stderr)
+
+        # Translate fields (cache hit = no API call; miss = 1 call + 0.15 s delay)
+        name_en    = translate(name)
+        address_en = translate(address) if address else ''
+        hours_en   = translate(hours)   if hours   else ''
+        sub_en     = translate(sub)     if sub     else ''
+
         entry = {'name': name, 'address': address, 'lat': lat, 'lng': lng}
-        if name_en:  entry['name_en']  = name_en
-        if district: entry['district'] = district
-        if kind:     entry['type']     = kind
-        if hours:    entry['hours']    = hours
-        if sub:      entry['sub']      = sub
-        if notes:    entry['notes']    = notes
-        if photo:    entry['photo']    = photo
+        if name_en:    entry['name_en']    = name_en
+        if address_en: entry['address_en'] = address_en
+        if district:   entry['district']   = district
+        if kind:       entry['type']       = kind
+        if hours:      entry['hours']      = hours
+        if hours_en:   entry['hours_en']   = hours_en
+        if sub:        entry['sub']        = sub
+        if sub_en:     entry['sub_en']     = sub_en
+        if notes:      entry['notes']      = notes
+        if photo:      entry['photo']      = photo
         out.append(entry)
     return out
 
 
 def main():
+    load_cache()
+
     records = []
     for url in [TAIPEI_API, TAIPEI_API_ALT]:
         try:
             data = fetch_json(url)
-            # Support both {"result":{"results":[...]}} and {"results":[...]}
             res = data.get('result', data)
             raw = res.get('results', res.get('data', []))
             if raw:
@@ -133,6 +180,8 @@ def main():
 
     locations = convert(records) if records else []
     print(f'[parse] {len(locations)} valid locations', file=sys.stderr)
+
+    save_cache()   # write translations.json (only if new entries were added)
 
     out_path = os.path.abspath(OUT)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)

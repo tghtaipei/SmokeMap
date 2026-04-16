@@ -113,14 +113,18 @@ const TYPE_EN = {
 };
 
 function buildPopup(loc) {
-  const type = currentLang === 'en' ? (TYPE_EN[loc.type] || loc.type) : loc.type;
+  const isEn = currentLang === 'en';
+  const type    = isEn ? (TYPE_EN[loc.type] || loc.type) : loc.type;
+  const address = isEn && loc.address_en ? loc.address_en : loc.address;
+  const hours   = isEn && loc.hours_en   ? loc.hours_en   : loc.hours;
+  const sub     = isEn && loc.sub_en     ? loc.sub_en     : loc.sub;
   let html = `<strong style="font-size:1em">${loc.name}</strong>`;
-  if (currentLang === 'en' && loc.name_en)
+  if (isEn && loc.name_en)
     html += `<br><small style="color:#666">${loc.name_en}</small>`;
-  if (loc.address) html += `<br><small>📍 ${loc.address}</small>`;
-  if (type)        html += `<br><small>🏷 ${type}</small>`;
-  if (loc.hours)   html += `<br><small>🕐 ${loc.hours}</small>`;
-  if (loc.sub)     html += `<br><small>↳ ${loc.sub}</small>`;
+  if (address) html += `<br><small>📍 ${address}</small>`;
+  if (type)    html += `<br><small>🏷 ${type}</small>`;
+  if (hours)   html += `<br><small>🕐 ${hours}</small>`;
+  if (sub)     html += `<br><small>↳ ${sub}</small>`;
   if (loc.photo && loc.photo.startsWith('http'))
     html += `<br><img src="${loc.photo}" alt="照片" loading="lazy" style="width:100%;margin-top:8px;border-radius:4px;max-height:160px;object-fit:cover;display:block;" onerror="this.style.display='none'">`;
   return html;
