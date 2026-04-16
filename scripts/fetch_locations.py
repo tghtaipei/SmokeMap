@@ -92,6 +92,7 @@ def main():
             raw = res.get('results', res.get('data', []))
             if raw:
                 print(f'[ok] Got {len(raw)} records from {url}', file=sys.stderr)
+                print(f'[fields] {list(raw[0].keys())}', file=sys.stderr)
                 records = raw
                 break
         except Exception as e:
