@@ -33,7 +33,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/translations.json
-          git diff --cached --quiet || git commit -m "chore: update translation cache [skip ci]" && git push
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update translation cache [skip ci]"
+            git push
+            echo "[cache-commit] translations.json committed and pushed"
+          else
+            echo "[cache-commit] No changes to translations.json"
+          fi
         continue-on-error: true
 
       - name: Show locations count

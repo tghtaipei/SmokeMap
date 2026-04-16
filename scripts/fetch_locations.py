@@ -41,8 +41,10 @@ def load_cache():
     try:
         with open(TRANS_FILE, encoding='utf-8') as f:
             _cache = json.load(f)
-        print(f'[cache] Loaded {len(_cache)} cached translations', file=sys.stderr)
-    except Exception:
+        print(f'[cache] Loaded {len(_cache)} cached translations from {TRANS_FILE}',
+              file=sys.stderr)
+    except Exception as e:
+        print(f'[cache] Could not load cache ({e}) — starting fresh', file=sys.stderr)
         _cache = {}
 
 
