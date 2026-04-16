@@ -110,6 +110,8 @@ function buildPopup(loc) {
   if (loc.type)    html += `<br><small>🏷 ${loc.type}</small>`;
   if (loc.hours)   html += `<br><small>🕐 ${loc.hours}</small>`;
   if (loc.sub)     html += `<br><small>↳ ${loc.sub}</small>`;
+  if (loc.photo && loc.photo.startsWith('http'))
+    html += `<br><img src="${loc.photo}" alt="照片" loading="lazy" style="width:100%;margin-top:8px;border-radius:4px;max-height:160px;object-fit:cover;display:block;" onerror="this.style.display='none'">`;
   return html;
 }
 
@@ -151,7 +153,7 @@ function addMarkers() {
     el.textContent = '🚬';
     const marker = new maplibregl.Marker({ element: el })
       .setLngLat([loc.lng, loc.lat])
-      .setPopup(new maplibregl.Popup({ maxWidth: '240px', offset: 18 }).setHTML(buildPopup(loc)))
+      .setPopup(new maplibregl.Popup({ maxWidth: '280px', offset: 18 }).setHTML(buildPopup(loc)))
       .addTo(leafletMap);
     mapMarkers.push(marker);
   });
@@ -164,17 +166,61 @@ function centerMap(lat, lng, zoom = 16) {
 /* ===========================
    Location data
    =========================== */
+const TAIPEI_API = 'https://data.taipei/api/v1/dataset/acaa0f43-3b92-4241-b5eb-3f7fdd76b74f?scope=resourceAquire';
+
 let mapLocations = [];
 
+function convertRecord(r) {
+  const lat = parseFloat(r['緯度'] || r['WGS84緯度'] || 0);
+  const lng = parseFloat(r['經度'] || r['WGS84經度'] || 0);
+  if (!lat || !lng) return null;
+  const name = (r['地點'] || r['地點名稱'] || '').trim();
+  if (!name) return null;
+  return {
+    name,
+    address:  (r['地址'] || '').trim(),
+    district: (r['行政區'] || '').trim(),
+    type:     (r['樣態'] || r['類型'] || '').trim(),
+    hours:    (r['開放時間'] || '').trim(),
+    sub:      (r['相對位置'] || '').trim(),
+    photo:    (r['照片連結'] || r['照片'] || r['圖片連結'] || r['圖片'] || '').trim(),
+    lat,
+    lng,
+  };
+}
+
 async function loadLocations() {
+  // Step 1: load static snapshot immediately (fast first paint)
   try {
     const resp = await fetch('data/locations.json');
     if (resp.ok) {
       const data = await resp.json();
-      if (Array.isArray(data) && data.length > 0) {
-        mapLocations = data;
-        return;
-      }
+      if (Array.isArray(data) && data.length > 0) mapLocations = data;
+    }
+  } catch (_) {}
+
+  // Step 2: revalidate from API in background (don't block rendering)
+  revalidateInBackground();
+}
+
+async function revalidateInBackground() {
+  try {
+    const resp = await fetch(TAIPEI_API);
+    if (!resp.ok) return;
+    const json = await resp.json();
+    const result = json.result || json;
+    const records = result.results || result.data || [];
+    if (!records.length) return;
+
+    const fresh = records.map(convertRecord).filter(Boolean);
+    if (!fresh.length) return;
+
+    // Re-render only if data actually changed
+    if (fresh.length !== mapLocations.length ||
+        JSON.stringify(fresh.map(l => l.name + l.lat + l.lng)) !==
+        JSON.stringify(mapLocations.map(l => l.name + l.lat + l.lng))) {
+      mapLocations = fresh;
+      addMarkers();
     }
   } catch (_) {}
 }

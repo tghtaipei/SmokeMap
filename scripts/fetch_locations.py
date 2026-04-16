@@ -4,8 +4,8 @@ Fetch Taipei City legal smoking areas from open data API.
 Used by GitHub Actions before deploying to GitHub Pages.
 Always exits with code 0 so deployment is never blocked.
 
-API: https://data.taipei.gov.tw (Taipei Open Data Platform)
-Dataset: 臺北市合法吸菸區 (dataset id: 46619)
+API: https://data.taipei (Taipei Open Data Platform)
+Dataset: 臺北市合法吸菸區 (uuid: acaa0f43-3b92-4241-b5eb-3f7fdd76b74f)
 """
 import urllib.request
 import urllib.error
@@ -13,17 +13,16 @@ import json
 import sys
 import os
 
-# Taipei Open Data API — fetch up to 200 records at once
+# Taipei Open Data API
 TAIPEI_API = (
-    'https://data.taipei.gov.tw/api/v1/dataset/'
-    'edbc4a42-5bfd-462a-9c64-3cd7f5c0b4db'   # 臺北市合法吸菸區 resource UUID
-    '/resource/edbc4a42-5bfd-462a-9c64-3cd7f5c0b4db'
-    '/preview?limit=200&offset=0'
+    'https://data.taipei/api/v1/dataset/'
+    'acaa0f43-3b92-4241-b5eb-3f7fdd76b74f'
+    '?scope=resourceAquire&limit=1000&offset=0'
 )
-# Fallback URL using numeric dataset id seen in photo URLs
 TAIPEI_API_ALT = (
-    'https://data.taipei.gov.tw/opendata/query/preview'
-    '?id=46619&limit=200&offset=0'
+    'https://data.taipei.gov.tw/api/v1/dataset/'
+    'acaa0f43-3b92-4241-b5eb-3f7fdd76b74f'
+    '?scope=resourceAquire&limit=1000&offset=0'
 )
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'locations.json')
@@ -55,19 +54,21 @@ def convert(records):
     out = []
     for r in records:
         try:
-            lat = float(r.get('緯度') or 0)
-            lng = float(r.get('經度') or 0)
+            lat = float(r.get('緯度') or r.get('WGS84緯度') or 0)
+            lng = float(r.get('經度') or r.get('WGS84經度') or 0)
         except ValueError:
             continue
         if not lat or not lng:
             continue
-        name    = (r.get('地點') or '').strip()
-        address = (r.get('地址') or '').strip()
+        name     = (r.get('地點') or r.get('地點名稱') or '').strip()
+        address  = (r.get('地址') or '').strip()
         district = (r.get('行政區') or '').strip()
-        kind    = (r.get('樣態') or '').strip()
-        hours   = (r.get('開放時間') or '').strip()
-        sub     = (r.get('相對位置') or '').strip()
-        notes   = (r.get('備註') or '').strip()
+        kind     = (r.get('樣態') or r.get('類型') or '').strip()
+        hours    = (r.get('開放時間') or '').strip()
+        sub      = (r.get('相對位置') or '').strip()
+        notes    = (r.get('備註') or '').strip()
+        photo    = (r.get('照片連結') or r.get('照片') or
+                    r.get('圖片連結') or r.get('圖片') or '').strip()
         if not name:
             continue
         entry = {'name': name, 'address': address, 'lat': lat, 'lng': lng}
@@ -76,6 +77,7 @@ def convert(records):
         if hours:    entry['hours']    = hours
         if sub:      entry['sub']      = sub
         if notes:    entry['notes']    = notes
+        if photo:    entry['photo']    = photo
         out.append(entry)
     return out
 
