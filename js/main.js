@@ -12,6 +12,8 @@ const TRANSLATIONS = {
     myLocation:        '我的位置',
     footerText:        `© ${new Date().getFullYear()} 吸菸地圖 SmokeMap｜資料來源：台北市政府開放資料｜`,
     healthWarning:     '⚠ 吸菸有害健康，請在合法吸菸區吸菸',
+    nearest:           '最近吸菸區',
+    navigateBtn:       '🧭 導航前往',
     locating:          '正在取得位置...',
     locateSuccess:     '已定位到您的位置',
     locateDenied:      '位置存取被拒絕，請檢查瀏覽器設定',
@@ -31,6 +33,8 @@ const TRANSLATIONS = {
     myLocation:        'My Location',
     footerText:        `© ${new Date().getFullYear()} SmokeMap｜Data: Taipei City Gov Open Data｜`,
     healthWarning:     '⚠ Smoking is harmful to health. Please smoke in designated areas.',
+    nearest:           'Nearest',
+    navigateBtn:       '🧭 Navigate',
     locating:          'Getting your location...',
     locateSuccess:     'Located your position',
     locateDenied:      'Location access denied. Check your browser settings.',
@@ -50,6 +54,8 @@ const TRANSLATIONS = {
 let currentLang  = 'zh';
 let toastTimeout = null;
 let leafletMap   = null;
+let userLat      = null;
+let userLng      = null;
 
 /* ===========================
    DOM References
@@ -105,6 +111,29 @@ function showToast(message, type = 'info', duration = 3000) {
    =========================== */
 const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
+// Haversine distance in metres between two lat/lng points
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function formatDistance(m) {
+  if (m < 1000) return currentLang === 'zh' ? `距您 ${Math.round(m)} 公尺` : `${Math.round(m)} m away`;
+  const km = (m / 1000).toFixed(1);
+  return currentLang === 'zh' ? `距您 ${km} 公里` : `${km} km away`;
+}
+
+function navURL(lat, lng) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  return isIOS
+    ? `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=w`
+    : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`;
+}
+
 // 樣態欄位英文對照表
 const TYPE_EN = {
   '戶外封閉式吸菸區':   'Outdoor Enclosed Smoking Area',
@@ -125,6 +154,11 @@ function buildPopup(loc) {
   if (type)    html += `<br><small>🏷 ${type}</small>`;
   if (hours)   html += `<br><small>🕐 ${hours}</small>`;
   if (sub)     html += `<br><small>↳ ${sub}</small>`;
+  if (userLat !== null) {
+    const dist = haversine(userLat, userLng, loc.lat, loc.lng);
+    html += `<br><small>📏 ${formatDistance(dist)}</small>`;
+  }
+  html += `<br><a href="${navURL(loc.lat, loc.lng)}" target="_blank" rel="noopener noreferrer" class="nav-btn">${t('navigateBtn')}</a>`;
   if (loc.photo && loc.photo.startsWith('http'))
     html += `<br><img src="${loc.photo}" alt="照片" loading="lazy" style="width:100%;margin-top:8px;border-radius:4px;max-height:160px;object-fit:cover;display:block;" onerror="this.style.display='none'">`;
   return html;
@@ -160,7 +194,7 @@ function initMap() {
 let mapMarkers = [];
 
 function addMarkers() {
-  mapMarkers.forEach(m => m.remove());
+  mapMarkers.forEach(m => m.marker.remove());
   mapMarkers = [];
   mapLocations.forEach(loc => {
     if (!isFinite(loc.lat) || !isFinite(loc.lng) ||
@@ -173,7 +207,7 @@ function addMarkers() {
       .setLngLat([loc.lng, loc.lat])
       .setPopup(new maplibregl.Popup({ maxWidth: '280px', offset: 18 }).setHTML(buildPopup(loc)))
       .addTo(leafletMap);
-    mapMarkers.push(marker);
+    mapMarkers.push({ marker, loc });
   });
 }
 
@@ -291,6 +325,9 @@ function getMyLocation() {
   navigator.geolocation.getCurrentPosition(
     position => {
       const { latitude: lat, longitude: lng } = position.coords;
+      userLat = lat;
+      userLng = lng;
+      addMarkers();
       centerMap(lat, lng, 15);
       showToast(t('locateSuccess'), 'success');
       $locationBtn.classList.remove('loading');
@@ -301,6 +338,55 @@ function getMyLocation() {
       $locationBtn.disabled = false;
       showToast(
         error.code === error.PERMISSION_DENIED ? t('locateDenied') : t('locateError'),
+        'error', 5000
+      );
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+/* ===========================
+   Find Nearest
+   =========================== */
+function findNearest() {
+  if (!mapLocations.length) return;
+
+  function doFind(lat, lng) {
+    let nearest = null, minDist = Infinity;
+    mapLocations.forEach(loc => {
+      const d = haversine(lat, lng, loc.lat, loc.lng);
+      if (d < minDist) { minDist = d; nearest = loc; }
+    });
+    if (!nearest) return;
+    centerMap(nearest.lat, nearest.lng, 17);
+    const entry = mapMarkers.find(m => m.loc === nearest);
+    if (entry) leafletMap.once('moveend', () => entry.marker.togglePopup());
+    showToast(`📍 ${nearest.name}  ${formatDistance(minDist)}`, 'success', 5000);
+  }
+
+  if (userLat !== null) { doFind(userLat, userLng); return; }
+
+  if (!navigator.geolocation) { showToast(t('locateUnsupported'), 'error'); return; }
+
+  const btn = document.getElementById('nearest-btn');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  showToast(t('locating'), 'info', 10000);
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      addMarkers();
+      doFind(userLat, userLng);
+    },
+    err => {
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      showToast(
+        err.code === err.PERMISSION_DENIED ? t('locateDenied') : t('locateError'),
         'error', 5000
       );
     },
@@ -341,6 +427,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   $locationBtn.addEventListener('click', getMyLocation);
+  document.getElementById('nearest-btn').addEventListener('click', findNearest);
   $langToggle.addEventListener('click', toggleLanguage);
 
   const yearEl = document.getElementById('year');
