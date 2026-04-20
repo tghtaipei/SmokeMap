@@ -12,6 +12,8 @@ const TRANSLATIONS = {
     myLocation:        '我的位置',
     footerText:        `© ${new Date().getFullYear()} 吸菸地圖 SmokeMap｜資料來源：台北市政府開放資料｜`,
     healthWarning:     '⚠ 吸菸有害健康，請在合法吸菸區吸菸',
+    nearest:           '最近吸菸區',
+    navigateBtn:       '🧭 導航前往',
     locating:          '正在取得位置...',
     locateSuccess:     '已定位到您的位置',
     locateDenied:      '位置存取被拒絕，請檢查瀏覽器設定',
@@ -31,6 +33,8 @@ const TRANSLATIONS = {
     myLocation:        'My Location',
     footerText:        `© ${new Date().getFullYear()} SmokeMap｜Data: Taipei City Gov Open Data｜`,
     healthWarning:     '⚠ Smoking is harmful to health. Please smoke in designated areas.',
+    nearest:           'Nearest',
+    navigateBtn:       '🧭 Navigate',
     locating:          'Getting your location...',
     locateSuccess:     'Located your position',
     locateDenied:      'Location access denied. Check your browser settings.',
@@ -50,6 +54,8 @@ const TRANSLATIONS = {
 let currentLang  = 'zh';
 let toastTimeout = null;
 let leafletMap   = null;
+let userLat      = null;
+let userLng      = null;
 
 /* ===========================
    DOM References
@@ -87,6 +93,7 @@ function applyLanguage(lang) {
 
 function toggleLanguage() {
   applyLanguage(currentLang === 'zh' ? 'en' : 'zh');
+  if (mapLocations.length > 0) addMarkers();
 }
 
 /* ===========================
@@ -104,12 +111,54 @@ function showToast(message, type = 'info', duration = 3000) {
    =========================== */
 const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
+// Haversine distance in metres between two lat/lng points
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function formatDistance(m) {
+  if (m < 1000) return currentLang === 'zh' ? `距您 ${Math.round(m)} 公尺` : `${Math.round(m)} m away`;
+  const km = (m / 1000).toFixed(1);
+  return currentLang === 'zh' ? `距您 ${km} 公里` : `${km} km away`;
+}
+
+function navURL(lat, lng) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  return isIOS
+    ? `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=w`
+    : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`;
+}
+
+// 樣態欄位英文對照表
+const TYPE_EN = {
+  '戶外封閉式吸菸區':   'Outdoor Enclosed Smoking Area',
+  '戶外非封閉式吸菸區':  'Outdoor Open-Air Smoking Area',
+  '室內吸菸室':         'Indoor Smoking Room',
+};
+
 function buildPopup(loc) {
+  const isEn = currentLang === 'en';
+  const type    = isEn ? (TYPE_EN[loc.type] || loc.type) : loc.type;
+  const address = isEn && loc.address_en ? loc.address_en : loc.address;
+  const hours   = isEn && loc.hours_en   ? loc.hours_en   : loc.hours;
+  const sub     = isEn && loc.sub_en     ? loc.sub_en     : loc.sub;
   let html = `<strong style="font-size:1em">${loc.name}</strong>`;
-  if (loc.address) html += `<br><small>📍 ${loc.address}</small>`;
-  if (loc.type)    html += `<br><small>🏷 ${loc.type}</small>`;
-  if (loc.hours)   html += `<br><small>🕐 ${loc.hours}</small>`;
-  if (loc.sub)     html += `<br><small>↳ ${loc.sub}</small>`;
+  if (isEn && loc.name_en)
+    html += `<br><small style="color:#666">${loc.name_en}</small>`;
+  if (address) html += `<br><small>📍 ${address}</small>`;
+  if (type)    html += `<br><small>🏷 ${type}</small>`;
+  if (hours)   html += `<br><small>🕐 ${hours}</small>`;
+  if (sub)     html += `<br><small>↳ ${sub}</small>`;
+  if (userLat !== null) {
+    const dist = haversine(userLat, userLng, loc.lat, loc.lng);
+    html += `<br><small>📏 ${formatDistance(dist)}</small>`;
+  }
+  html += `<br><a href="${navURL(loc.lat, loc.lng)}" target="_blank" rel="noopener noreferrer" class="nav-btn">${t('navigateBtn')}</a>`;
   if (loc.photo && loc.photo.startsWith('http'))
     html += `<br><img src="${loc.photo}" alt="照片" loading="lazy" style="width:100%;margin-top:8px;border-radius:4px;max-height:160px;object-fit:cover;display:block;" onerror="this.style.display='none'">`;
   return html;
@@ -145,9 +194,12 @@ function initMap() {
 let mapMarkers = [];
 
 function addMarkers() {
-  mapMarkers.forEach(m => m.remove());
+  mapMarkers.forEach(m => m.marker.remove());
   mapMarkers = [];
   mapLocations.forEach(loc => {
+    if (!isFinite(loc.lat) || !isFinite(loc.lng) ||
+        loc.lat < -90 || loc.lat > 90 ||
+        loc.lng < -180 || loc.lng > 180) return;
     const el = document.createElement('div');
     el.style.cssText = 'background:#8B1A1A;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.4);font-size:15px;cursor:pointer;';
     el.textContent = '🚬';
@@ -155,7 +207,7 @@ function addMarkers() {
       .setLngLat([loc.lng, loc.lat])
       .setPopup(new maplibregl.Popup({ maxWidth: '280px', offset: 18 }).setHTML(buildPopup(loc)))
       .addTo(leafletMap);
-    mapMarkers.push(marker);
+    mapMarkers.push({ marker, loc });
   });
 }
 
@@ -166,61 +218,14 @@ function centerMap(lat, lng, zoom = 16) {
 /* ===========================
    Location data
    =========================== */
-const TAIPEI_API = 'https://data.taipei/api/v1/dataset/acaa0f43-3b92-4241-b5eb-3f7fdd76b74f?scope=resourceAquire';
-
 let mapLocations = [];
 
-function convertRecord(r) {
-  const lat = parseFloat(r['緯度'] || r['WGS84緯度'] || 0);
-  const lng = parseFloat(r['經度'] || r['WGS84經度'] || 0);
-  if (!lat || !lng) return null;
-  const name = (r['地點'] || r['地點名稱'] || '').trim();
-  if (!name) return null;
-  return {
-    name,
-    address:  (r['地址'] || '').trim(),
-    district: (r['行政區'] || '').trim(),
-    type:     (r['樣態'] || r['類型'] || '').trim(),
-    hours:    (r['開放時間'] || '').trim(),
-    sub:      (r['相對位置'] || '').trim(),
-    photo:    (r['照片連結'] || r['照片'] || r['圖片連結'] || r['圖片'] || '').trim(),
-    lat,
-    lng,
-  };
-}
-
 async function loadLocations() {
-  // Step 1: load static snapshot immediately (fast first paint)
   try {
     const resp = await fetch('data/locations.json');
     if (resp.ok) {
       const data = await resp.json();
       if (Array.isArray(data) && data.length > 0) mapLocations = data;
-    }
-  } catch (_) {}
-
-  // Step 2: revalidate from API in background (don't block rendering)
-  revalidateInBackground();
-}
-
-async function revalidateInBackground() {
-  try {
-    const resp = await fetch(TAIPEI_API);
-    if (!resp.ok) return;
-    const json = await resp.json();
-    const result = json.result || json;
-    const records = result.results || result.data || [];
-    if (!records.length) return;
-
-    const fresh = records.map(convertRecord).filter(Boolean);
-    if (!fresh.length) return;
-
-    // Re-render only if data actually changed
-    if (fresh.length !== mapLocations.length ||
-        JSON.stringify(fresh.map(l => l.name + l.lat + l.lng)) !==
-        JSON.stringify(mapLocations.map(l => l.name + l.lat + l.lng))) {
-      mapLocations = fresh;
-      addMarkers();
     }
   } catch (_) {}
 }
@@ -259,8 +264,9 @@ function renderDropdown(locations) {
     const item = document.createElement('div');
     item.className = 'dropdown-item';
     item.setAttribute('role', 'option');
+    const nameEn = (currentLang === 'en' && loc.name_en) ? ` (${loc.name_en})` : '';
     item.innerHTML =
-      `<div class="item-main">${loc.name}</div>` +
+      `<div class="item-main">${loc.name}${nameEn}</div>` +
       (loc.address ? `<div class="item-sub">${loc.address}</div>` : '');
 
     item.addEventListener('mousedown', e => {
@@ -319,6 +325,9 @@ function getMyLocation() {
   navigator.geolocation.getCurrentPosition(
     position => {
       const { latitude: lat, longitude: lng } = position.coords;
+      userLat = lat;
+      userLng = lng;
+      addMarkers();
       centerMap(lat, lng, 15);
       showToast(t('locateSuccess'), 'success');
       $locationBtn.classList.remove('loading');
@@ -329,6 +338,55 @@ function getMyLocation() {
       $locationBtn.disabled = false;
       showToast(
         error.code === error.PERMISSION_DENIED ? t('locateDenied') : t('locateError'),
+        'error', 5000
+      );
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+/* ===========================
+   Find Nearest
+   =========================== */
+function findNearest() {
+  if (!mapLocations.length) return;
+
+  function doFind(lat, lng) {
+    let nearest = null, minDist = Infinity;
+    mapLocations.forEach(loc => {
+      const d = haversine(lat, lng, loc.lat, loc.lng);
+      if (d < minDist) { minDist = d; nearest = loc; }
+    });
+    if (!nearest) return;
+    centerMap(nearest.lat, nearest.lng, 17);
+    const entry = mapMarkers.find(m => m.loc === nearest);
+    if (entry) leafletMap.once('moveend', () => entry.marker.togglePopup());
+    showToast(`📍 ${nearest.name}  ${formatDistance(minDist)}`, 'success', 5000);
+  }
+
+  if (userLat !== null) { doFind(userLat, userLng); return; }
+
+  if (!navigator.geolocation) { showToast(t('locateUnsupported'), 'error'); return; }
+
+  const btn = document.getElementById('nearest-btn');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  showToast(t('locating'), 'info', 10000);
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      addMarkers();
+      doFind(userLat, userLng);
+    },
+    err => {
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      showToast(
+        err.code === err.PERMISSION_DENIED ? t('locateDenied') : t('locateError'),
         'error', 5000
       );
     },
@@ -369,6 +427,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   $locationBtn.addEventListener('click', getMyLocation);
+  document.getElementById('nearest-btn').addEventListener('click', findNearest);
   $langToggle.addEventListener('click', toggleLanguage);
 
   const yearEl = document.getElementById('year');
